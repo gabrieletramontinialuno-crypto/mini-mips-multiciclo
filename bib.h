@@ -74,7 +74,7 @@ sinais gera_sinais();
 
 int ula(int A, int B, int ctrl, int *ovf, int *zero);
 void salvar_estado(CPU *cpu); 
-int proximo_estado(); 
+int proximo_estado(int estado, int opcode);
 void executa_ciclo(CPU *cpu);
 void executa_instrucao(CPU *cpu);
 void executa_programa(CPU *cpu);
