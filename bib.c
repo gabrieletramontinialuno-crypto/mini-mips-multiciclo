@@ -65,7 +65,77 @@ void decoder(memoria *mem){
 
 }
 sinais gera_sinais(int estado, int funct){
-
+   sinais s = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    switch (estado) {
+        case 0: // FETCH
+            s.IREsc = 1;
+            s.PCEsc = 1;
+            s.ULAFonteB = 1; // PC+1
+            s.ControleULA = 0;
+            s.PCFonte = 0;
+            s.RegDst = 1;
+        break;
+        case 1: // DECODE
+            s.ULAFonteA = 0;
+            s.ULAFonteB = 2;
+            s.ControleULA = 0;
+            s.RegDst = 1;
+        break;
+        case 2: // MEM ADDR / IMM
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 2;
+            s.ControleULA = 0;
+        break;
+        case 3: // MEM READ (LW)
+            s.IouD = 1;
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 2;
+        break;
+        case 4: // WB LW
+            s.EscReg = 1;
+            s.MemParaReg = 1;
+            s.RegDst = 0;
+            s.IouD = 1;
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 2;
+        break;
+        case 5: // MEM WRITE (SW)
+            s.EscMem = 1;
+            s.IouD = 1;
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 2;
+        break;
+        case 6: // WB ADDI
+            s.EscReg = 1;
+            s.RegDst = 0;
+            s.MemParaReg = 0;
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 2;
+        break;
+        case 7: // R EXEC
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 0;
+            s.ControleULA = funct;
+            s.RegDst = 1;
+        break;
+        case 8: // R WB
+            s.RegDst = 1;
+            s.EscReg = 1;
+            s.MemParaReg = 0;
+        break;
+        case 9: // BEQ
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 0;
+            s.ControleULA = 1;
+            s.Branch = 1;
+            s.PCFonte = 1;
+        break;
+        case 10: // JUMP
+            s.PCEsc = 1;
+            s.PCFonte = 2;
+        break;
+    }
+    return s;
 }
 
 // ULA
