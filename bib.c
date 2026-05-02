@@ -1,0 +1,260 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "bib.h"
+
+const char *NOME_ESTADO[] = {
+    "FETCH", "DECODE", "MEM_ADDR", "MEM_READ", "LW_WB",
+    "MEM_WRITE", "ADDI_WB", "R_EXEC", "R_WB", "BEQ", "JUMP"
+};
+
+void limpa_buffer(){int c; while((c=getchar())!='\n'&&c!=EOF);}
+
+// MEMORIA
+void carrega_mem(CPU *cpu){
+    
+}
+
+void inicializa_cpu(CPU *cpu){
+    cpu->pc = cpu->estado_atual = cpu->ciclos_clock=0;
+    cpu->instrucoes_exec = cpu->num_instrucoes = cpu->i_hist=0;
+    memset(&cpu->est, 0, sizeof(estatisticas));
+    memset(&cpu->inter, 0, sizeof(regs_inter));
+    for(int i=0;i<MAX_REG;i++) cpu->reg[i]=0;
+    cpu->NOME_REG[0]="$0"; 
+    cpu->NOME_REG[1]="$r1"; 
+    cpu->NOME_REG[2]="$r2";
+    cpu->NOME_REG[3]="$r3"; 
+    cpu->NOME_REG[4]="$r4"; 
+    cpu->NOME_REG[5]="$r5";
+    cpu->NOME_REG[6]="$r6"; 
+    cpu->NOME_REG[7]="$r7";
+    for(int i=0;i<MAX_MEM;i++){
+        memset(cpu->memoria[i].bin,'0',16);
+        cpu->memoria[i].bin[16]='\0';
+        cpu->memoria[i].tipo=tipo_dado;
+        cpu->memoria[i].opcode=cpu->memoria[i].rs=cpu->memoria[i].rt=0;
+        cpu->memoria[i].rd=cpu->memoria[i].funct=cpu->memoria[i].imm=cpu->memoria[i].addr=0;
+        cpu->memoria[i].dado=0;
+    }
+}
+
+int separa_bits(char *b, int ini, int nBits){
+    int n = 0;
+    for (int i = 0; i < nBits; i++) {
+        n = (n << 1) | (b[ini + i] == '1' ? 1 : 0);
+    }
+    return n;
+}
+int bits_imm(char *b, int ini, int nBits){
+    int val = separa_bits(b, ini, nBits);
+    signed char sinal = (signed char)(val << 2);
+    return (int)(sinal >> 2);
+}
+int bits_jump(char *b){
+    return separa_bits(b,4,12)&0xFF;
+}
+int bin_to_int16(char *b){
+    int v=0; for(int i=0;i<16;i++) v=(v<<1)|(b[i]=='1'?1:0);
+    if(v&0x8000) v|=~0xFFFF;
+    return v;
+}
+
+// UNIT CONTROL
+void decoder(memoria *mem){
+    char *b=mem->bin;
+    mem->opcode=separa_bits(b,0,4);
+
+    switch(mem->opcode){
+        case 0: // Tipo R
+            mem->tipo = tipo_R;
+            mem->rs = separa_bits(b,4,3);
+            mem->rt = separa_bits(b,7,3);
+            mem->rd = separa_bits(b,10,3);
+            mem->funct = separa_bits(b,13,3);
+            mem->imm = mem->addr=0;
+        break;
+        case 2: // Jump
+            mem->tipo = tipo_J;
+            mem->addr = bits_jump(b);
+            mem->rs = mem->rt = mem->rd = mem->funct = mem->imm=0;
+        break;
+        case 4: case 8: case 11: case 15: // Tipo I
+            mem->tipo = tipo_I; 
+            mem->rs = separa_bits(b,4,3); 
+            mem->rt = separa_bits(b,7,3);
+            mem->imm = bits_imm(b,10,6);
+            mem->rd = mem->funct = mem->addr=0;
+        break;
+    }
+}
+sinais gera_sinais(int estado, int funct){
+
+}
+
+// ULA
+int ula(int A, int B, int ctrl, int *ovf, int *zero){
+
+}
+
+// SALVA ESTADO PARA VOLTAR
+void salvar_estado(CPU *cpu){
+
+}
+
+// EXECUCAO
+int proximo_estado(int estado, int opcode){
+    switch(estado){
+        case 0: return 1;
+        case 1:
+            if(opcode==11||opcode==15||opcode==4) return 2; // lw,sw,addi
+            if(opcode==0) return 7; // tipo R
+            if(opcode==8) return 9; // beq
+            if(opcode==2) return 10; // jump
+            return 0; // desconhecido
+        case 2:
+            if(opcode==11) return 3; // lw
+            if(opcode==15) return 5; // sw
+            if(opcode==4) return 6;  // addi
+            return 0;
+        case 3: return 4;
+        case 4: return 0;
+        case 5: return 0;
+        case 6: return 0;
+        case 7: return 8;
+        case 8: return 0;
+        case 9: return 0;
+        case 10: return 0;
+        default: return 0;
+    }
+}
+void executa_ciclo(CPU *cpu){
+ 
+}
+void executa_instrucao(CPU *cpu){
+    
+}
+void executa_programa(CPU *cpu){
+    if(cpu->num_instrucoes==0){ 
+        printf("Nenhuma instrucao carregada.\n"); 
+        return; 
+    }
+    while(cpu->pc<MEM && cpu->instrucoes_exec<MAX_MEM){
+        executa_instrucao(cpu);
+    }
+    printf("\nExecucao finalizada: %d instrucoes, %d ciclos de clock.\n", cpu->instrucoes_exec, cpu->ciclos_clock);
+}
+
+// ESTATISTICAS
+void atualiza_estatisticas(CPU *cpu){
+
+}
+
+// VOLTAR
+void volta_ciclo(CPU *cpu){
+
+}
+void volta_instrucao(CPU *cpu){
+
+}
+void reset_cpu(CPU *cpu){
+    cpu->pc=0; cpu->estado_atual=0; cpu->ciclos_clock=0;
+    cpu->instrucoes_exec=0; cpu->i_hist=0;
+    memset(&cpu->est,0,sizeof(estatisticas));
+    memset(&cpu->inter,0,sizeof(regs_inter));
+    for(int i=0;i<MAX_REG;i++){
+        cpu->reg[i]=0;
+    }
+    for(int i=MEM;i<MAX_MEM;i++){
+        cpu->memoria[i].dado=0;
+    }
+    printf("Simulador resetado!\n");
+}
+
+void disassembla(memoria *mem, char *buf){
+    switch(mem->opcode){
+        case 0:
+            switch(mem->funct){
+                case 0: sprintf(buf,"add $r%d, $r%d, $r%d",mem->rd,mem->rs,mem->rt); break;
+                case 1: sprintf(buf,"sub $r%d, $r%d, $r%d",mem->rd,mem->rs,mem->rt); break;
+                case 2: sprintf(buf,"and $r%d, $r%d, $r%d",mem->rd,mem->rs,mem->rt); break;
+                case 3: sprintf(buf,"or  $r%d, $r%d, $r%d",mem->rd,mem->rs,mem->rt); break;
+                default: sprintf(buf,"Instrução desconhecida"); break;
+            } break;
+        case 2:  sprintf(buf,"j %d",mem->addr); break;
+        case 4:  sprintf(buf,"addi $r%d, $r%d, %d",mem->rt,mem->rs,mem->imm); break;
+        case 8:  sprintf(buf,"beq $r%d, $r%d, %d",mem->rs,mem->rt,mem->imm); break;
+        case 11: sprintf(buf,"lw $r%d, %d($r%d)",mem->rt,mem->imm,mem->rs); break;
+        case 15: sprintf(buf,"sw $r%d, %d($r%d)",mem->rt,mem->imm,mem->rs); break;
+        default: sprintf(buf,"Instrução desconhecida"); break;
+    }
+}
+
+// PRINT
+void print_mem(CPU *cpu){
+
+}
+void print_regs(CPU *cpu){
+    printf("\nBanco de Registradores:\n");
+    printf("+------+--------+\n| Reg  |  Valor |\n+------+--------+\n");
+    for(int i=0;i<MAX_REG;i++)
+        printf("| %4s | %6d |\n",cpu->NOME_REG[i],cpu->reg[i]);
+    printf("+------+--------+\n");
+}
+void print_inter(CPU *cpu){
+
+}
+void print_est(CPU *cpu){
+
+}
+void print_complete(CPU *cpu){
+    printf("\n=========== ESTADO DO SIMULADOR MULTICICLO ===========\n");
+    print_regs(cpu);
+    print_inter(cpu);
+    print_mem(cpu);
+}
+
+// SALVAR ARQUIVOS
+void salva_asm(CPU *cpu){
+    if(cpu->num_instrucoes==0){ 
+        printf("Nenhuma instrucao carregada.\n"); 
+        return; 
+    }
+    char arq[50]; 
+    printf("Nome do arquivo .asm: "); 
+    limpa_buffer(); 
+    scanf("%s",arq);
+    strcat(arq,".asm");
+
+    FILE *f=fopen(arq,"w");
+    if(!f){ 
+        printf("Erro ao criar arquivo.\n"); 
+        return;
+    }
+    for(int i=0; i < cpu->num_instrucoes; i++){
+        char linha_asm[64];
+        memoria temp=cpu->memoria[i];
+        decoder(&temp);
+        disassembla(&temp,linha_asm);
+        fprintf(f,"%s\n",linha_asm);
+    }
+    fclose(f); 
+    printf("Arquivo '%s' salvo!\n",arq);
+}
+
+void salva_dat(CPU *cpu){
+    char arq[50]; 
+    printf("Nome do arquivo .dat: "); 
+    limpa_buffer(); 
+    scanf("%s",arq);
+    strcat(arq,".dat");
+    FILE *f=fopen(arq,"w");
+    if(!f){ 
+        printf("Erro ao criar arquivo.\n"); 
+        return; 
+    }
+    for(int i=MEM;i<MAX_MEM;i++){
+        fprintf(f,"%d\n",cpu->memoria[i].dado);
+    }
+    fclose(f); printf("Arquivo '%s' salvo!\n",arq);
+}
