@@ -15,7 +15,7 @@ int main(){
             "3. Executar uma instrucao completa (Step Instrucao)\n"
             "4. Executar um ciclo de clock (Step Ciclo)\n"
             "5. Voltar um ciclo (Back Step)\n"
-            "6. Voltar instrução"
+            "6. Voltar instrucao\n"
             "7. Resetar programa\n"
             "8. Imprimir memoria\n"
             "9. Imprimir banco de registradores\n"

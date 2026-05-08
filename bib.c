@@ -10,7 +10,7 @@ const char *NOME_ESTADO[] = {
 
 void limpa_buffer(){int c; while((c=getchar())!='\n'&&c!=EOF);}
 
-// MEMOR
+// MEMORIA
 
 void carrega_mem(CPU *cpu){
     char arq[50];
@@ -289,13 +289,51 @@ sinais gera_sinais(int estado, int funct){
 
 // ULA
 int ula(int A, int B, int ctrl, int *ovf, int *zero){
+    int resultado = 0;
+    *ovf = 0;
+    *zero = 0;
 
+    switch(ctrl){
+        case 0: // ADD
+            resultado = A + B;
+            // overflow: sinais iguais na entrada, sinal diferente na saida
+            if(((A > 0 && B > 0) && resultado < 0) || ((A < 0 && B < 0) && resultado > 0))
+                *ovf = 1;
+        break;
+        case 1: // SUB
+            resultado = A - B;
+            if(((A > 0 && B < 0) && resultado < 0) || ((A < 0 && B > 0) && resultado > 0))
+                *ovf = 1;
+        break;
+        case 2: // AND
+            resultado = A & B;
+        break;
+        case 3: // OR
+            resultado = A | B;
+        break;
+        default:
+            resultado = 0;
+        break;
+    }
 
+    *zero = (resultado == 0) ? 1 : 0;
+    return resultado;
 }
 
 // SALVA ESTADO PARA VOLTAR
 void salvar_estado(CPU *cpu){
-
+    if(cpu->i_hist >= MAX_MEM) return; // historico cheio
+    salva_cpu *h = &cpu->historico[cpu->i_hist];
+    h->pc = cpu->pc;
+    h->estado = cpu->estado_atual;
+    h->instrucoes_exec = cpu->instrucoes_exec;
+    memcpy(h->reg, cpu->reg, sizeof(cpu->reg));
+    h->inter = cpu->inter;
+    h->est = cpu->est;
+    // salva dados
+    for(int i = MEM; i < MAX_MEM; i++)
+        h->dados[i - MEM] = cpu->memoria[i].dado;
+    cpu->i_hist++;
 }
 
 // EXECUCAO
@@ -325,6 +363,12 @@ int proximo_estado(int estado, int opcode){
     }
 }
 void executa_ciclo(CPU *cpu){
+    if(cpu->num_instrucoes == 0){
+        printf("Nenhuma instrucao carregada.\n");
+        return;
+    }
+
+    salvar_estado(cpu);
 
     int est = cpu->estado_atual;
     memoria *ir = &cpu->inter.IR;
@@ -472,30 +516,129 @@ void executa_ciclo(CPU *cpu){
 }
  
 void executa_instrucao(CPU *cpu){
-    
+    if(cpu->num_instrucoes == 0){
+        printf("Nenhuma instrucao carregada.\n");
+        return;
+    }
+    if(cpu->pc >= MEM){
+        printf("PC fora da area de instrucoes (PC=%d).\n", cpu->pc);
+        return;
+    }
+
+    printf("\n--- Executando instrucao (PC=%d) ---\n", cpu->pc);
+
+    // executa ciclos ate completar uma instrucao inteira
+    // uma instrucao termina quando o proximo estado eh FETCH (estado 0)
+    do {
+        executa_ciclo(cpu);
+    } while(cpu->estado_atual != 0);
+
+    printf("--- Instrucao completa (%d ciclos totais) ---\n", cpu->ciclos_clock);
 }
 void executa_programa(CPU *cpu){
-    if(cpu->num_instrucoes==0){ 
+    if(cpu->num_instrucoes == 0){ 
         printf("Nenhuma instrucao carregada.\n"); 
         return; 
     }
-    while(cpu->pc<MEM && cpu->instrucoes_exec<MAX_MEM){
-        executa_instrucao(cpu);
+
+    printf("\n========== EXECUTANDO PROGRAMA ==========\n");
+
+    int limite = MAX_MEM * 5; // limite de seguranca contra loops infinitos
+    int ciclos_ini = cpu->ciclos_clock;
+
+    while(cpu->pc < MEM && cpu->instrucoes_exec < MAX_MEM && limite > 0){
+        executa_ciclo(cpu);
+        limite--;
     }
-    printf("\nExecucao finalizada: %d instrucoes, %d ciclos de clock.\n", cpu->instrucoes_exec, cpu->ciclos_clock);
+
+    if(limite == 0)
+        printf("\nATENCAO: Limite de ciclos atingido (possivel loop infinito).\n");
+
+    printf("\n========== EXECUCAO FINALIZADA ==========\n");
+    printf("Instrucoes executadas: %d\n", cpu->instrucoes_exec);
+    printf("Ciclos de clock: %d\n", cpu->ciclos_clock - ciclos_ini);
+    printf("CPI medio: %.2f\n", 
+        cpu->instrucoes_exec > 0 ? (float)(cpu->ciclos_clock - ciclos_ini) / cpu->instrucoes_exec : 0.0);
 }
 
 // ESTATISTICAS
 void atualiza_estatisticas(CPU *cpu){
+    memoria *ir = &cpu->inter.IR;
+    cpu->est.total_inst++;
 
+    switch(ir->tipo){
+        case tipo_R:
+            cpu->est.total_r++;
+            switch(ir->funct){
+                case 0: cpu->est.add++; break;
+                case 1: cpu->est.sub++; break;
+                case 2: cpu->est.and_op++; break;
+                case 3: cpu->est.or_op++; break;
+            }
+        break;
+        case tipo_I:
+            cpu->est.total_i++;
+            switch(ir->opcode){
+                case 4:  cpu->est.addi++; break;
+                case 8:  cpu->est.beq++; break;
+                case 11: cpu->est.lw++; break;
+                case 15: cpu->est.sw++; break;
+            }
+        break;
+        case tipo_J:
+            cpu->est.total_j++;
+            cpu->est.jump++;
+        break;
+        default: break;
+    }
 }
 
 // VOLTAR
 void volta_ciclo(CPU *cpu){
-
+    if(cpu->i_hist == 0){
+        printf("Nao ha estado anterior para voltar.\n");
+        return;
+    }
+    cpu->i_hist--;
+    salva_cpu *h = &cpu->historico[cpu->i_hist];
+    cpu->pc = h->pc;
+    cpu->estado_atual = h->estado;
+    cpu->instrucoes_exec = h->instrucoes_exec;
+    memcpy(cpu->reg, h->reg, sizeof(cpu->reg));
+    cpu->inter = h->inter;
+    cpu->est = h->est;
+    cpu->ciclos_clock--;
+    cpu->est.ciclos_clock = cpu->ciclos_clock;
+    for(int i = MEM; i < MAX_MEM; i++)
+        cpu->memoria[i].dado = h->dados[i - MEM];
+    printf("Voltou 1 ciclo. Estado atual: %d (%s), PC=%d\n", 
+        cpu->estado_atual, NOME_ESTADO[cpu->estado_atual], cpu->pc);
 }
 void volta_instrucao(CPU *cpu){
+    if(cpu->i_hist == 0){
+        printf("Nao ha estado anterior para voltar.\n");
+        return;
+    }
+    // volta ciclos ate encontrar um estado FETCH (estado 0)
+    // ou ate acabar o historico
+    do {
+        if(cpu->i_hist == 0) break;
+        cpu->i_hist--;
+        salva_cpu *h = &cpu->historico[cpu->i_hist];
+        cpu->pc = h->pc;
+        cpu->estado_atual = h->estado;
+        cpu->instrucoes_exec = h->instrucoes_exec;
+        memcpy(cpu->reg, h->reg, sizeof(cpu->reg));
+        cpu->inter = h->inter;
+        cpu->est = h->est;
+        cpu->ciclos_clock--;
+        cpu->est.ciclos_clock = cpu->ciclos_clock;
+        for(int i = MEM; i < MAX_MEM; i++)
+            cpu->memoria[i].dado = h->dados[i - MEM];
+    } while(cpu->estado_atual != 0);
 
+    printf("Voltou 1 instrucao. Estado atual: %d (%s), PC=%d\n",
+        cpu->estado_atual, NOME_ESTADO[cpu->estado_atual], cpu->pc);
 }
 void reset_cpu(CPU *cpu){
     cpu->pc=0; cpu->estado_atual=0; cpu->ciclos_clock=0;
@@ -573,10 +716,39 @@ void print_regs(CPU *cpu){
     printf("+------+--------+\n");
 }
 void print_inter(CPU *cpu){
-
+    printf("\nRegistradores Intermediarios:\n");
+    printf("+----------------+--------+\n");
+    printf("| Registrador    |  Valor |\n");
+    printf("+----------------+--------+\n");
+    printf("| PC             | %6d |\n", cpu->pc);
+    printf("| Estado Atual   | %6d |\n", cpu->estado_atual);
+    printf("| IR.opcode      | %6d |\n", cpu->inter.IR.opcode);
+    printf("| IR.rs          | %6d |\n", cpu->inter.IR.rs);
+    printf("| IR.rt          | %6d |\n", cpu->inter.IR.rt);
+    printf("| IR.rd          | %6d |\n", cpu->inter.IR.rd);
+    printf("| IR.funct       | %6d |\n", cpu->inter.IR.funct);
+    printf("| IR.imm         | %6d |\n", cpu->inter.IR.imm);
+    printf("| IR.addr        | %6d |\n", cpu->inter.IR.addr);
+    printf("| MDR            | %6d |\n", cpu->inter.MDR);
+    printf("| A              | %6d |\n", cpu->inter.A);
+    printf("| B              | %6d |\n", cpu->inter.B);
+    printf("| ULASaida       | %6d |\n", cpu->inter.ULASaida);
+    printf("+----------------+--------+\n");
 }
 void print_est(CPU *cpu){
-
+    printf("\n============ ESTATISTICAS ============\n");
+    printf("Ciclos de clock:     %d\n", cpu->ciclos_clock);
+    printf("Instrucoes executadas: %d\n", cpu->instrucoes_exec);
+    if(cpu->instrucoes_exec > 0)
+        printf("CPI medio:           %.2f\n", (float)cpu->ciclos_clock / cpu->instrucoes_exec);
+    printf("\n--- Por tipo ---\n");
+    printf("Tipo R: %d  (add=%d, sub=%d, and=%d, or=%d)\n",
+        cpu->est.total_r, cpu->est.add, cpu->est.sub, cpu->est.and_op, cpu->est.or_op);
+    printf("Tipo I: %d  (addi=%d, lw=%d, sw=%d, beq=%d)\n",
+        cpu->est.total_i, cpu->est.addi, cpu->est.lw, cpu->est.sw, cpu->est.beq);
+    printf("Tipo J: %d  (jump=%d)\n", cpu->est.total_j, cpu->est.jump);
+    printf("Total:  %d\n", cpu->est.total_inst);
+    printf("======================================\n");
 }
 void print_complete(CPU *cpu){
     printf("\n=========== ESTADO DO SIMULADOR MULTICICLO ===========\n");
