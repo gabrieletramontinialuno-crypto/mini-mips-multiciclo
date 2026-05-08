@@ -10,7 +10,7 @@ const char *NOME_ESTADO[] = {
 
 void limpa_buffer(){int c; while((c=getchar())!='\n'&&c!=EOF);}
 
-// MEMORIA
+// MEMOR
 
 void carrega_mem(CPU *cpu){
     char arq[50];
