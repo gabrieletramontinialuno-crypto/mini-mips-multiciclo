@@ -57,7 +57,7 @@ void carrega_mem(CPU *cpu){
                     }
                 }
 
-                if (valido) {
+                if (valido!=0) {
                     strcpy(cpu->memoria[i].bin, instrucao);
                     cpu->memoria[i].tipo = tipo_outros; // decoder ajusta depois
                     i++;
@@ -130,7 +130,8 @@ int bits_jump(char *b){
     return separa_bits(b,4,12)&0xFF;
 }
 int bin_to_int16(char *b){
-    int v=0; for(int i=0;i<16;i++) v=(v<<1)|(b[i]=='1'?1:0);
+    int v=0; 
+    for(int i=0;i<16;i++) v=(v<<1)|(b[i]=='1'?1:0);
     if(v&0x8000) v|=~0xFFFF;
     return v;
 }
@@ -162,11 +163,130 @@ void decoder(memoria *mem){
 
 }
 sinais gera_sinais(int estado, int funct){
+    
+    sinais s;
 
+    // zera todos sinais
+    memset(&s, 0, sizeof(sinais));
+
+    switch(estado){
+
+        //  FETCH 
+        case 0:
+
+            s.IouD = 0;          // endereço vem do PC
+            s.le_mem = 1;        // leitura memória
+            s.IREsc = 1;         // escreve IR
+
+            s.ULAFonteA = 0;     // usa PC
+            s.ULAFonteB = 1;     // constante 1
+
+            s.ControleULA = 0;   // soma
+
+            s.PCEsc = 1;         // atualiza PC
+            s.PCFonte = 0;       // saída da ULA
+
+        break;
+
+        // DECODE 
+        case 1:
+
+            s.ULAFonteA = 0;     // PC
+            s.ULAFonteB = 3;     // imediato deslocado
+            s.ControleULA = 0;   // soma
+
+        break;
+
+        //  MEM_ADDR 
+        case 2:
+
+            s.ULAFonteA = 1;     // registrador A
+            s.ULAFonteB = 2;     // imediato
+            s.ControleULA = 0;   // soma endereço
+
+        break;
+
+        //  MEM_READ 
+        case 3:
+
+            s.IouD = 1;          // endereço vem da ULA
+            s.le_mem = 1;
+
+        break;
+
+        //  LW_WB 
+        case 4:
+
+            s.EscReg = 1;
+            s.MemParaReg = 1;
+            s.RegDst = 0;
+
+        break;
+
+        //  MEM_WRITE 
+        case 5:
+
+            s.IouD = 1;
+            s.EscMem = 1;
+
+        break;
+
+        //  ADDI_WB 
+        case 6:
+
+            s.EscReg = 1;
+            s.RegDst = 0;
+            s.MemParaReg = 0;
+
+        break;
+
+        //  R_EXEC 
+        case 7:
+
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 0;
+
+            s.ControleULA = funct;
+
+        break;
+
+        //  R_WB 
+        case 8:
+
+            s.EscReg = 1;
+            s.RegDst = 1;
+            s.MemParaReg = 0;
+
+        break;
+
+        //  BEQ 
+        case 9:
+
+            s.ULAFonteA = 1;
+            s.ULAFonteB = 0;
+
+            s.ControleULA = 1; // sub
+
+            s.Branch = 1;
+            s.PCFonte = 1;
+
+        break;
+
+        // JUMP 
+        case 10:
+
+            s.PCEsc = 1;
+            s.PCFonte = 2;
+
+        break;
+    }
+
+    return s;
 }
 
 // ULA
 int ula(int A, int B, int ctrl, int *ovf, int *zero){
+
 
 }
 
@@ -182,14 +302,13 @@ int proximo_estado(int estado, int opcode){
 void executa_ciclo(CPU *cpu){
 
     int est = cpu->estado_atual;
-   memoria *ir = &cpu->inter.IR;
-
+    memoria *ir = &cpu->inter.IR;
+    sinais s = gera_sinais(est, ir->funct);
     printf("  [Ciclo %d] Estado %d (%s)", cpu->ciclos_clock, est, NOME_ESTADO[est]);
 
     switch(est){
 
         case 0: { // FETCH
-            salvar_estado(cpu);
 
             if(cpu->pc >= 0 && cpu->pc < MAX_MEM){
                 cpu->inter.IR = cpu->memoria[cpu->pc];
@@ -216,7 +335,7 @@ void executa_ciclo(CPU *cpu){
             break;
         }
 
-        case 2: { // MEM_ADDR
+        case 2: { // MEM_ADDR (SW e LW)
             int ovf, zero;
             cpu->inter.ULASaida = ula(cpu->inter.A, ir->imm, 0, &ovf, &zero);
 
@@ -225,7 +344,7 @@ void executa_ciclo(CPU *cpu){
             break;
         }
 
-        case 3: { // MEM_READ (lw)
+        case 3: { // MEM_READ (Leitura memoria)
             int addr = cpu->inter.ULASaida;
 
             if(addr >= MEM && addr < MAX_MEM){
@@ -238,13 +357,13 @@ void executa_ciclo(CPU *cpu){
             break;
         }
 
-        case 4: { // LW WB
+        case 4: { // LW White Back
             if(ir->rt != 0) // protege $0
                 cpu->reg[ir->rt] = cpu->inter.MDR;
 
             printf(" | Reg[%d]=MDR=%d\n", ir->rt, cpu->inter.MDR);
 
-            atualiza_estatisticas(cpu);
+            atualiza_estatisticas(cpu); //ainda não implementada nesse codigo
             cpu->instrucoes_exec++;
             break;
         }
@@ -275,7 +394,7 @@ void executa_ciclo(CPU *cpu){
             break;
         }
 
-        case 7: { // R EXEC
+        case 7: { // tipo R
             int ovf, zero;
             cpu->inter.ULASaida = ula(cpu->inter.A, cpu->inter.B, ir->funct, &ovf, &zero);
 
@@ -287,7 +406,7 @@ void executa_ciclo(CPU *cpu){
             break;
         }
 
-        case 8: { // R WB
+        case 8: { // R Write Back
             if(ir->rd != 0)
                 cpu->reg[ir->rd] = cpu->inter.ULASaida;
 
@@ -301,9 +420,9 @@ void executa_ciclo(CPU *cpu){
         case 9: { // BEQ
             if(cpu->inter.A == cpu->inter.B){
                 cpu->pc = cpu->inter.ULASaida;
-                printf(" | Branch TAKEN PC->%d\n", cpu->pc);
+                printf(" | Branch FEITO PC->%d\n", cpu->pc);
             } else {
-                printf(" | Branch NOT taken\n");
+                printf(" | Branch NAO FEITO\n");
             }
 
             atualiza_estatisticas(cpu);
@@ -408,13 +527,13 @@ void print_mem(CPU *cpu){
 
             printf(" %-26s |", buf);
 
-            // 👇 NÃO mostra dado pra instrução
+            // NÃO mostra dado pra instrução
             printf("        |\n");
         }
         else{
             printf(" %-26s |", "(dado)");
 
-            // 👇 só aqui mostra valor
+            // só aqui mostra valor
             printf(" %6d |\n", cpu->memoria[i].dado);
         }
     }

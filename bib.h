@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
     int PCEsc, IouD, EscMem, IREsc, MemParaReg, EscReg;
     int ULAFonteA, ULAFonteB, ControleULA, PCFonte, RegDst, Branch;
+    int le_mem;
 } sinais;
 
 typedef struct {
@@ -70,7 +71,7 @@ int bits_imm(char *b, int ini, int nBits);
 int bits_jump(char *b);
 int bin_to_int16(char *b);
 void decoder(memoria *mem);
-sinais gera_sinais(); 
+sinais gera_sinais(int estado, int funct); 
 
 int ula(int A, int B, int ctrl, int *ovf, int *zero);
 void salvar_estado(CPU *cpu); 
