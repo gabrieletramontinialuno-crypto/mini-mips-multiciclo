@@ -5,7 +5,7 @@
 #define MAX_REG 8
 #define MEM 128
 
-// ENUMs
+
 typedef enum { 
     tipo_R, tipo_J, tipo_I, tipo_dado, tipo_outros 
 } classe_inst;
@@ -16,7 +16,7 @@ typedef enum {
 } estado;
 
 
-// STRUCTs
+
 typedef struct {
     classe_inst tipo;
     char bin[17];
@@ -61,7 +61,7 @@ typedef struct {
     salva_cpu historico[MAX_MEM];
 } CPU;
 
-// PROTOTIPOS
+
 void limpa_buffer();
 void carrega_mem(CPU *cpu);
 void inicializa_cpu(CPU *cpu);
