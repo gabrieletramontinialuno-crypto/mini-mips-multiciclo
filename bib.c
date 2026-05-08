@@ -4,8 +4,7 @@
 #include <string.h>
 
 const char *NOME_ESTADO[] = {"FETCH", "DECODE",    "MEM_ADDR", "MEM_READ",
-                             "LW_WB", "MEM_WRITE", "ADDI_WB",  "R_EXEC",
-                             "R_WB",  "BEQ",       "JUMP"};
+"LW_WB", "MEM_WRITE", "ADDI_WB",  "R_EXEC", "R_WB",  "BEQ",       "JUMP"};
 
 void limpa_buffer() {
   int c;
@@ -553,10 +552,7 @@ void executa_programa(CPU *cpu) {
   printf("\n========== EXECUCAO FINALIZADA ==========\n");
   printf("Instrucoes executadas: %d\n", cpu->instrucoes_exec);
   printf("Ciclos de clock: %d\n", cpu->ciclos_clock - ciclos_ini);
-  printf("CPI medio: %.2f\n",
-         cpu->instrucoes_exec > 0
-             ? (float)(cpu->ciclos_clock - ciclos_ini) / cpu->instrucoes_exec
-             : 0.0);
+  printf("CPI medio: %.2f\n", cpu->instrucoes_exec > 0 ? (float)(cpu->ciclos_clock - ciclos_ini) / cpu->instrucoes_exec : 0.0);
 }
 
 void atualiza_estatisticas(CPU *cpu) {
