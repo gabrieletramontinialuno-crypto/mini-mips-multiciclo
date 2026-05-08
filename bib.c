@@ -142,25 +142,28 @@ void decoder(memoria *mem){
 
     mem->opcode = separa_bits(b, 0, 4);
 
-    if(mem->opcode == 0){ // tipo R
-        mem->tipo = tipo_R;
-        mem->rs    = separa_bits(b, 4, 3);
-        mem->rt    = separa_bits(b, 7, 3);
-        mem->rd    = separa_bits(b,10, 3);
-        mem->funct = separa_bits(b,13, 3);
+    switch(mem->opcode){
+        case 0: // Tipo R
+            mem->tipo = tipo_R;
+            mem->rs = separa_bits(b, 4, 3);
+            mem->rt = separa_bits(b, 7, 3);
+            mem->rd = separa_bits(b, 10, 3);
+            mem->funct = separa_bits(b, 13, 3);
+            mem->imm = mem->addr = 0;
+        break;
+        case 2: // Jump
+            mem->tipo = tipo_J;
+            mem->addr = bits_jump(b);
+            mem->rs = mem->rt = mem->rd = mem->funct = mem->imm = 0;
+        break;
+        case 4: case 8: case 11: case 15: // Tipo I
+            mem->tipo = tipo_I;
+            mem->rs = separa_bits(b, 4, 3);
+            mem->rt = separa_bits(b, 7, 3);
+            mem->imm = bits_imm(b, 10, 6);
+            mem->rd = mem->funct = mem->addr = 0;
+        break;
     }
-    else if(mem->opcode == 2){ // jump
-        mem->tipo = tipo_J;
-        mem->addr = bits_jump(b);
-    }
-    else { // tipo I
-        mem->tipo = tipo_I;
-        mem->rs  = separa_bits(b, 4, 3);
-        mem->rt  = separa_bits(b, 7, 3);
-        mem->imm = bits_imm(b,10, 6);
-    
-}
-
 }
 sinais gera_sinais(int estado, int funct){
     
@@ -297,7 +300,29 @@ void salvar_estado(CPU *cpu){
 
 // EXECUCAO
 int proximo_estado(int estado, int opcode){
-
+    switch(estado){
+        case 0: return 1;
+        case 1:
+            if(opcode==11||opcode==15||opcode==4) return 2; // lw,sw,addi
+            if(opcode==0) return 7; // tipo R
+            if(opcode==8) return 9; // beq
+            if(opcode==2) return 10; // jump
+            return 0; // desconhecido
+        case 2:
+            if(opcode==11) return 3; // lw
+            if(opcode==15) return 5; // sw
+            if(opcode==4) return 6;  // addi
+            return 0;
+        case 3: return 4;
+        case 4: return 0;
+        case 5: return 0;
+        case 6: return 0;
+        case 7: return 8;
+        case 8: return 0;
+        case 9: return 0;
+        case 10: return 0;
+        default: return 0;
+    }
 }
 void executa_ciclo(CPU *cpu){
 
