@@ -13,6 +13,9 @@ void limpa_buffer(){int c; while((c=getchar())!='\n'&&c!=EOF);}
 // MEMORIA
 
 void carrega_mem(CPU *cpu){
+    // Reinicializa CPU ao carregar novo programa
+    inicializa_cpu(cpu);
+
     char arq[50];
 
     printf("Nome do arquivo .mem: ");
@@ -174,113 +177,97 @@ sinais gera_sinais(int estado, int funct){
 
     switch(estado){
 
-        //  FETCH 
+        // Estado 0 [0000] - FETCH (Busca da instrução)
         case 0:
-
-            s.IouD = 0;          // endereço vem do PC
-            s.le_mem = 1;        // leitura memória
-            s.IREsc = 1;         // escreve IR
-
+            s.EscMem = 0;        // não escreve na memória
             s.ULAFonteA = 0;     // usa PC
-            s.ULAFonteB = 1;     // constante 1
-
-            s.ControleULA = 0;   // soma
-
+            s.IouD = 0;          // endereço vem do PC
+            s.IREsc = 1;         // escreve IR
+            s.ULAFonteB = 1;     // constante 1 (PC+1)
+            s.ControleULA = 0;   // soma (ADD)
             s.PCEsc = 1;         // atualiza PC
             s.PCFonte = 0;       // saída da ULA
-
         break;
 
-        // DECODE 
+        // Estado 1 [0001] - DECODE (Decodificação / Leitura Rs e Rt)
         case 1:
-
             s.ULAFonteA = 0;     // PC
-            s.ULAFonteB = 3;     // imediato deslocado
-            s.ControleULA = 0;   // soma
-
+            s.ULAFonteB = 2;     // imediato (10 binário)
+            s.ControleULA = 0;   // soma (ADD)
+            s.RegDst = 1;
         break;
 
-        //  MEM_ADDR 
+        // Estado 2 [0010] - Cálculo do endereço de acesso à memória/imediato
         case 2:
-
             s.ULAFonteA = 1;     // registrador A
-            s.ULAFonteB = 2;     // imediato
-            s.ControleULA = 0;   // soma endereço
-
+            s.ULAFonteB = 2;     // imediato (10 binário)
+            s.ControleULA = 0;   // soma (ADD)
         break;
 
-        //  MEM_READ 
+        // Estado 3 [0011] - Acesso à memória (leitura LW)
         case 3:
-
+            s.EscMem = 0;        // não escreve (leitura)
             s.IouD = 1;          // endereço vem da ULA
-            s.le_mem = 1;
-
+            s.ULAFonteA = 1;     // registrador A
+            s.ULAFonteB = 2;     // imediato (10 binário)
         break;
 
-        //  LW_WB 
+        // Estado 4 [0100] - Escrita no registrador Rt (LW Write Back)
         case 4:
-
             s.EscReg = 1;
             s.MemParaReg = 1;
             s.RegDst = 0;
-
+            s.ULAFonteA = 1;     // registrador A
+            s.ULAFonteB = 2;     // imediato (10 binário)
         break;
 
-        //  MEM_WRITE 
+        // Estado 5 [0101] - Escrita à memória (SW)
         case 5:
-
-            s.IouD = 1;
-            s.EscMem = 1;
-
+            s.EscMem = 1;        // escreve na memória
+            s.IouD = 1;          // endereço vem da ULA
+            s.ULAFonteA = 1;     // registrador A
+            s.ULAFonteB = 2;     // imediato (10 binário)
         break;
 
-        //  ADDI_WB 
+        // Estado 6 [0110] - Término da instrução tipo I (ADDI WB)
         case 6:
-
+            s.EscMem = 0;
             s.EscReg = 1;
             s.RegDst = 0;
             s.MemParaReg = 0;
-
+            s.ULAFonteA = 1;     // registrador A
+            s.ULAFonteB = 2;     // imediato (10 binário)
         break;
 
-        //  R_EXEC 
+        // Estado 7 [0111] - Execução tipo R
         case 7:
-
-            s.ULAFonteA = 1;
-            s.ULAFonteB = 0;
-
-            s.ControleULA = funct;
-
-        break;
-
-        //  R_WB 
-        case 8:
-
-            s.EscReg = 1;
+            s.ULAFonteA = 1;     // registrador A
+            s.ULAFonteB = 0;     // registrador B (00 binário)
+            s.ControleULA = funct; // ULAOp = Funct
             s.RegDst = 1;
+        break;
+
+        // Estado 8 [1000] - Término da instrução tipo R (R Write Back)
+        case 8:
+            s.RegDst = 1;
+            s.EscReg = 1;
             s.MemParaReg = 0;
-
         break;
 
-        //  BEQ 
+        // Estado 9 [1001] - Término do desvio condicional (BEQ)
         case 9:
-
-            s.ULAFonteA = 1;
-            s.ULAFonteB = 0;
-
-            s.ControleULA = 1; // sub
-
+            s.ULAFonteA = 1;     // registrador A
+            s.ULAFonteB = 0;     // registrador B (00 binário)
+            s.ControleULA = 1;   // subtração (para comparação)
             s.Branch = 1;
-            s.PCFonte = 1;
-
+            s.PCEsc = 0;
+            s.PCFonte = 1;       // FontePC = 01
         break;
 
-        // JUMP 
+        // Estado 10 [1010] - Término do desvio incondicional (JUMP)
         case 10:
-
             s.PCEsc = 1;
-            s.PCFonte = 2;
-
+            s.PCFonte = 2;       // FontePC = 10
         break;
     }
 
