@@ -8,8 +8,7 @@ const char *NOME_ESTADO[] = {
 
 void limpa_buffer() {
   int c;
-  while ((c = getchar()) != '\n' && c != EOF)
-    ;
+  while ((c = getchar()) != '\n' && c != EOF);
 }
 
 // MEMORIA
