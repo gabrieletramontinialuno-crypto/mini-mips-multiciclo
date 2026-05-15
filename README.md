@@ -1,1 +1,0 @@
-# Mini-Mips-8bits-monociclo
