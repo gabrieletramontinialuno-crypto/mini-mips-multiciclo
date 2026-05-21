@@ -23,7 +23,7 @@ int main() {
            "11. Imprimir todo o simulador\n"
            "12. Imprimir Estatisticas\n"
            "13. Salvar .asm\n"
-           "14. Salvar .dat\n"
+           //"14. Salvar .dat\n"
            " 0. Sair\n"
            "Opcao: ");
     if (scanf("%d", &menu) != 1) {

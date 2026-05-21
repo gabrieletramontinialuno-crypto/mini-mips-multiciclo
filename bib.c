@@ -2,17 +2,17 @@
 #include <stdio.h>
 #include <string.h>
 
-const char *NOME_ESTADO[] = {
-    "FETCH",   "DECODE", "MEM_ADDR", "MEM_READ", "LW_WB", "MEM_WRITE",
-    "ADDI_WB", "R_EXEC", "R_WB",     "BEQ",      "JUMP"};
+const char *NOME_ESTADO[] = {"FETCH", "DECODE",    "MEM_ADDR", "MEM_READ",
+                             "LW_WB", "MEM_WRITE", "ADDI_WB",  "R_EXEC",
+                             "R_WB",  "BEQ",       "JUMP"};
 
 void limpa_buffer() {
   int c;
-  while ((c = getchar()) != '\n' && c != EOF);
+  while ((c = getchar()) != '\n' && c != EOF)
+    ;
 }
 
 // MEMORIA
-
 void carrega_mem(CPU *cpu) {
   char arq[100];
   printf("Nome do arquivo .mem: ");
@@ -348,120 +348,123 @@ void executa_ciclo(CPU *cpu) {
   int est = cpu->estado_atual;
   Mem_in *ir = &cpu->inter.IR;
   Sinais s = gera_sinais(est, ir->funct);
-  (void)s; // sinais gerados para referencia/debug OBS
 
-  salvar_estado(cpu); // salva o estado ANTES de executar o ciclo
+  salvar_estado(cpu);
 
-  printf("  [Ciclo %d] Estado %d (%s)", cpu->ciclos_clock, est,
-         NOME_ESTADO[est]);
+  Mem_in temp_inst = (est == 0) ? cpu->memoria[cpu->pc] : cpu->inter.IR;
+  if (est == 0)
+    decode(&temp_inst);
+  char buf[64];
+  disassembla(&temp_inst, buf);
 
-  switch (est) {
-  case 0: { // FETCH: IR=Mem[PC], PC=PC+1
-    if (cpu->pc >= 0 && cpu->pc < MAX_MEM) {
-      cpu->inter.IR = cpu->memoria[cpu->pc];
-      decode(&cpu->inter.IR);
+  printf("  [Ciclo %d] Estado %d (%s) \n  Instrucao: %s\n", cpu->ciclos_clock,
+         est, NOME_ESTADO[est], buf);
+
+  // MUX da Memoria
+  int mem_addr = s.IouD ? cpu->inter.ULASaida : cpu->pc;
+  int mem_data = 0;
+  if (mem_addr >= 0 && mem_addr < MAX_MEM) {
+    mem_data = cpu->memoria[mem_addr].dado;
+  }
+
+  // MUX da ULA
+  int ula_A = 0, ula_B = 0;
+  if (s.ULAFonteA == 0) {
+    ula_A = cpu->pc;
+  } else if (s.ULAFonteA == 1) {
+    ula_A = cpu->inter.A;
+  }
+
+  if (s.ULAFonteB == 0) {
+    ula_B = cpu->inter.B;
+  } else if (s.ULAFonteB == 1) {
+    ula_B = 1; // PC + 1
+  } else if (s.ULAFonteB == 2) {
+    ula_B = ir->imm;
+  } else if (s.ULAFonteB == 3) {
+    ula_B = ir->imm;
+  }
+
+  // Execução da ULA
+  int ovf, zero;
+  int ula_res = ula(ula_A, ula_B, s.ControleULA, &ovf, &zero);
+
+  // MUX PCFonte
+  int next_pc = cpu->pc;
+  if (s.PCEsc || (s.Branch && zero)) {
+    if (s.PCFonte == 0) {
+      next_pc = ula_res;
+    } else if (s.PCFonte == 1) {
+      next_pc = cpu->inter.ULASaida;
+    } else if (s.PCFonte == 2) {
+      next_pc = ir->addr;
     }
-    int ovf, zero;
-    cpu->inter.ULASaida = ula(cpu->pc, 1, 0, &ovf, &zero);
-    cpu->pc = cpu->inter.ULASaida;
-    printf(" | IR=Mem[%d] PC->%d\n", cpu->pc - 1, cpu->pc);
-    break;
   }
-  case 1: { // DECODE: A=Reg[rs], B=Reg[rt], ULASaida=PC+ext(imm)
-    cpu->inter.A = (int)cpu->reg[ir->rs];
-    cpu->inter.B = (int)cpu->reg[ir->rt];
-    int ovf, zero;
-    int imm_ext = ir->imm;
-    cpu->inter.ULASaida = ula(cpu->pc, imm_ext, 0, &ovf, &zero);
-    printf(" | A=Reg[%d]=%d B=Reg[%d]=%d ULASaida=%d\n", ir->rs, cpu->inter.A,
-           ir->rt, cpu->inter.B, cpu->inter.ULASaida);
-    break;
-  }
-  case 2: { // MEM ADDR: ULASaida = A + ext(imm)
-    int ovf, zero;
-    cpu->inter.ULASaida = ula(cpu->inter.A, ir->imm, 0, &ovf, &zero);
-    printf(" | ULASaida=A(%d)+imm(%d)=%d\n", cpu->inter.A, ir->imm,
-           cpu->inter.ULASaida);
-    break;
-  }
-  case 3: { // MEM READ: MDR=Mem[ULASaida]
-    int addr = cpu->inter.ULASaida;
-    if (addr >= 0 && addr < MAX_MEM)
-      cpu->inter.MDR = cpu->memoria[addr].dado;
-    else {
-      printf(" | Endereco invalido: %d\n", addr);
-      cpu->inter.MDR = 0;
-      break;
-    }
-    printf(" | MDR=Mem[%d]=%d\n", addr, cpu->inter.MDR);
-    break;
-  }
-  case 4: { // LW WB: Reg[rt]=MDR
-    cpu->reg[ir->rt] = (char)cpu->inter.MDR;
-    printf(" | Reg[%d]=MDR=%d\n", ir->rt, cpu->inter.MDR);
+
+  // Prints de aviso
+  if (est == 0) {
+    printf("\n---------- PC = %d ----------\n", cpu->pc);
+  } else if (est == 1) {
+    printf(" | ULA(BranchAddr): PC(%d) + imm(%d) = %d\n", cpu->pc, ir->imm,
+           ula_res);
+  } else if (est == 2) {
+    printf(" | ULA(MemAddr): A(%d) + imm(%d) = %d\n", cpu->inter.A, ir->imm,
+           ula_res);
+  } else if (est == 4 || est == 5 || est == 6 || est == 8) {
     atualiza_Estatisticas(cpu);
     cpu->instrucoes_exec++;
-    break;
-  }
-  case 5: { // SW: Mem[ULASaida]=B
-    int addr = cpu->inter.ULASaida;
-    if (addr >= 0 && addr < MAX_MEM)
-      cpu->memoria[addr].dado = cpu->inter.B;
-    else {
-      printf(" | Endereco invalido: %d\n", addr);
-      break;
-    }
-    printf(" | Mem[%d]=B=%d\n", addr, cpu->inter.B);
-    atualiza_Estatisticas(cpu);
-    cpu->instrucoes_exec++;
-    break;
-  }
-  case 6: { // ADDI WB: Reg[rt]=ULASaida
-    cpu->reg[ir->rt] = (char)cpu->inter.ULASaida;
-    printf(" | Reg[%d]=ULASaida=%d\n", ir->rt, cpu->inter.ULASaida);
-    atualiza_Estatisticas(cpu);
-    cpu->instrucoes_exec++;
-    break;
-  }
-  case 7: { // R EXEC: ULASaida=A op B
-    int ovf, zero;
-    cpu->inter.ULASaida =
-        ula(cpu->inter.A, cpu->inter.B, ir->funct, &ovf, &zero);
+  } else if (est == 7) {
     if (ovf)
       printf(" | OVERFLOW! A=%d B=%d res=%d\n", cpu->inter.A, cpu->inter.B,
-             cpu->inter.ULASaida);
+             ula_res);
     else
-      printf(" | ULASaida=A(%d) op(%d) B(%d)=%d\n", cpu->inter.A, ir->funct,
-             cpu->inter.B, cpu->inter.ULASaida);
-    break;
-  }
-  case 8: { // R WB: Reg[rd]=ULASaida
-    cpu->reg[ir->rd] = (char)cpu->inter.ULASaida;
-    printf(" | Reg[%d]=ULASaida=%d\n", ir->rd, cpu->inter.ULASaida);
-    atualiza_Estatisticas(cpu);
-    cpu->instrucoes_exec++;
-    break;
-  }
-  case 9: { // BEQ: if(A==B) PC=ULASaida
-    int ovf, zero;
-    ula(cpu->inter.A, cpu->inter.B, 1, &ovf, &zero);
-    if (zero) {
-      cpu->pc = cpu->inter.ULASaida;
-      printf(" | Branch TAKEN PC->%d\n", cpu->pc);
-    } else
+      printf(" | ULA(Exec): A(%d) op(%d) B(%d) = %d\n", cpu->inter.A,
+             s.ControleULA, cpu->inter.B, ula_res);
+  } else if (est == 9) {
+    printf(" | ULA(BranchCond): A(%d) - B(%d) = %d\n", cpu->inter.A,
+           cpu->inter.B, ula_res);
+    if (zero)
+      printf(" | Branch TAKEN PC->%d\n", next_pc);
+    else
       printf(" | Branch NOT taken\n");
     atualiza_Estatisticas(cpu);
     cpu->instrucoes_exec++;
-    break;
-  }
-  case 10: { // JUMP: PC=IR[7:0]
-    cpu->pc = ir->addr;
-    printf(" | PC->%d (jump)\n", cpu->pc);
+  } else if (est == 10) {
+    printf(" | PC->%d (jump)\n", next_pc);
     atualiza_Estatisticas(cpu);
     cpu->instrucoes_exec++;
-    break;
   }
+
+  // Escrita na Memória
+  if (s.EscMem) {
+    if (mem_addr >= 0 && mem_addr < MAX_MEM) {
+      cpu->memoria[mem_addr].dado = cpu->inter.B;
+    }
   }
+
+  // Mux registradores
+  if (s.EscReg) {
+    int write_reg = s.RegDst ? ir->rd : ir->rt;
+    int write_data = s.MemParaReg ? cpu->inter.MDR : cpu->inter.ULASaida;
+    cpu->reg[write_reg] = (char)write_data; // Escreve no registrador
+  }
+
+  if (s.IREsc) {
+    if (mem_addr >= 0 && mem_addr < MAX_MEM) {
+      cpu->inter.IR = cpu->memoria[mem_addr];
+      decode(&cpu->inter.IR);
+      ir = &cpu->inter.IR;
+    }
+  }
+
+  cpu->inter.A = (int)cpu->reg[ir->rs];
+  cpu->inter.B = (int)cpu->reg[ir->rt];
+  cpu->inter.ULASaida = ula_res;
+  cpu->inter.MDR = mem_data;
+  cpu->pc = next_pc;
+
+  print_inter(cpu);
+  // Atualizacoes
   cpu->estado_atual = proximo_estado(est, ir->opcode);
   cpu->ciclos_clock++;
   cpu->est.ciclos_clock = cpu->ciclos_clock;
@@ -477,14 +480,6 @@ void executa_instrucao(CPU *cpu) {
     printf("Instrucao de parada no PC %d.\n", pc_ini);
     return;
   }
-  printf("\n---------- PC = %d ----------\n", pc_ini);
-
-  // disassembla a instrucao antes de executar
-  char buf[64];
-  Mem_in temp = cpu->memoria[pc_ini];
-  decode(&temp);
-  disassembla(&temp, buf);
-  printf("Instrucao: %s\n", buf);
 
   do {
     executa_ciclo(cpu);
@@ -686,9 +681,7 @@ void print_inter(CPU *cpu) {
   printf("+----------+--------+\n");
   printf("| Reg      |  Valor |\n");
   printf("+----------+--------+\n");
-  printf("| PC       | %6d |\n", cpu->pc);
-  printf("| Estado   | %6d |\n", cpu->estado_atual);
-  printf("| IR.opc   | %6d |\n", cpu->inter.IR.opcode);
+  printf("| IR       | %6d |\n", cpu->inter.IR.opcode);
   printf("| A        | %6d |\n", cpu->inter.A);
   printf("| B        | %6d |\n", cpu->inter.B);
   printf("| ULASaida | %6d |\n", cpu->inter.ULASaida);

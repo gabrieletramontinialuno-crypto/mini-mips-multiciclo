@@ -6,7 +6,6 @@
 #define MEM 128
 #define INST_END 128
 
-
 typedef enum { tipo_R, tipo_J, tipo_I, tipo_dado, tipo_outros } classe_inst;
 
 typedef enum {
@@ -23,7 +22,7 @@ typedef enum {
   S_JUMP = 10
 } Estado;
 
-//STRUCTs
+// STRUCTs
 typedef struct {
   classe_inst tipo;
   char bin[17];
@@ -65,7 +64,7 @@ typedef struct {
   Salva_CPU historico[MAX_MEM];
 } CPU;
 
-//PROTOTIPOS
+// PROTOTIPOS
 void limpa_buffer();
 void carrega_mem(CPU *cpu);
 void inicializa_cpu(CPU *cpu);
@@ -75,7 +74,7 @@ int bits_imm(char *b, int ini, int n);
 int bits_jump(char *b);
 int bin_to_int16(char *b);
 void decode(Mem_in *e);
-Sinais gera_sinais(int estado, int funct);
+Sinais controle(int estado, int funct);
 
 int ula(int A, int B, int ctrl, int *ovf, int *zero);
 void salvar_estado(CPU *cpu);
