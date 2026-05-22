@@ -95,6 +95,6 @@ void print_est(CPU *cpu);
 void print_complete(CPU *cpu);
 
 void salva_asm(CPU *cpu);
-void salva_dat(CPU *cpu);
+void salva_mem(CPU *cpu);
 
 #endif

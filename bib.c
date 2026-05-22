@@ -37,16 +37,9 @@ void carrega_mem(CPU *cpu) {
 
   char linha[100];
   int addr = 0;
-  int modo_data = 0;
 
   while (fgets(linha, sizeof(linha), f)) {
     linha[strcspn(linha, "\r\n")] = '\0';
-    if (strncmp(linha, ".data", 5) == 0) {
-      modo_data = 1;
-      if (addr < INST_END)
-        addr = INST_END;
-      continue;
-    }
     if (strlen(linha) == 0) {
       addr++;
       continue;
@@ -70,11 +63,11 @@ void carrega_mem(CPU *cpu) {
     if (addr >= MAX_MEM)
       break;
 
-    if (addr < INST_END && !modo_data) {
+    if (addr < INST_END) {
       // Instrucao
       strcpy(cpu->memoria[addr].bin, bits);
       decode(&cpu->memoria[addr]);
-      cpu->memoria[addr].dado = 0;
+      cpu->memoria[addr].dado = bin_to_int16(bits);
       cpu->num_instrucoes = addr + 1;
     } else {
       // Dado
@@ -87,6 +80,7 @@ void carrega_mem(CPU *cpu) {
 
   fclose(f);
   printf("Instrucoes e dados carregados com sucesso.\n");
+  print_mem(cpu);
 }
 
 void inicializa_cpu(CPU *cpu) {
@@ -100,7 +94,7 @@ void inicializa_cpu(CPU *cpu) {
   memset(&cpu->inter, 0, sizeof(Regs_inter));
   for (int i = 0; i < MAX_REG; i++)
     cpu->reg[i] = 0;
-  cpu->NOME_REG[0] = "$0";
+  cpu->NOME_REG[0] = "$r0";
   cpu->NOME_REG[1] = "$r1";
   cpu->NOME_REG[2] = "$r2";
   cpu->NOME_REG[3] = "$r3";
@@ -170,10 +164,7 @@ void decode(Mem_in *e) {
     e->imm = bits_imm(b, 10, 6);
     e->rd = e->funct = e->addr = 0;
     break;
-  case 5: // HALT
-    e->tipo = tipo_outros;
-    e->rs = e->rt = e->rd = e->funct = e->imm = e->addr = 0;
-    break;
+
   default:
     e->tipo = tipo_outros;
     break;
@@ -252,6 +243,48 @@ Sinais gera_sinais(int estado, int funct) {
   }
   return s;
 }
+int proximo_estado(int estado, int opcode) {
+  switch (estado) {
+  case 0:
+    return 1;
+  case 1:
+    if (opcode == 11 || opcode == 15 || opcode == 4)
+      return 2; // lw,sw,addi
+    if (opcode == 0)
+      return 7; // tipo R
+    if (opcode == 8)
+      return 9; // beq
+    if (opcode == 2)
+      return 10; // jump
+    return 0;    // Desconhecido
+  case 2:
+    if (opcode == 11)
+      return 3; // lw
+    if (opcode == 15)
+      return 5; // sw
+    if (opcode == 4)
+      return 6; // addi
+    return 0;
+  case 3:
+    return 4; // lw
+  case 4:
+    return 0;
+  case 5:
+    return 0;
+  case 6:
+    return 0;
+  case 7:
+    return 8; // tipo R
+  case 8:
+    return 0;
+  case 9:
+    return 0;
+  case 10:
+    return 0;
+  default:
+    return 0;
+  }
+}
 
 int ula(int A, int B, int ctrl, int *ovf, int *zero) {
   int r = 0;
@@ -302,142 +335,71 @@ void salvar_estado(CPU *cpu) {
     cpu->i_hist++;
 }
 
-int proximo_estado(int estado, int opcode) {
-  switch (estado) {
-  case 0:
-    return 1;
-  case 1:
-    if (opcode == 11 || opcode == 15 || opcode == 4)
-      return 2; // lw,sw,addi
-    if (opcode == 0)
-      return 7; // tipo R
-    if (opcode == 8)
-      return 9; // beq
-    if (opcode == 2)
-      return 10; // jump
-    return 0;    // Desconhecido
-  case 2:
-    if (opcode == 11)
-      return 3; // lw
-    if (opcode == 15)
-      return 5; // sw
-    if (opcode == 4)
-      return 6; // addi
-    return 0;
-  case 3:
-    return 4; // lw
-  case 4:
-    return 0;
-  case 5:
-    return 0;
-  case 6:
-    return 0;
-  case 7:
-    return 8; // tipo R
-  case 8:
-    return 0;
-  case 9:
-    return 0;
-  case 10:
-    return 0;
-  default:
-    return 0;
-  }
-}
 void executa_ciclo(CPU *cpu) {
   int est = cpu->estado_atual;
   Mem_in *ir = &cpu->inter.IR;
   Sinais s = gera_sinais(est, ir->funct);
 
+  // Salva estado antes de executar
   salvar_estado(cpu);
 
+  // BUSCA
   Mem_in temp_inst = (est == 0) ? cpu->memoria[cpu->pc] : cpu->inter.IR;
-  if (est == 0)
+
+  // DECODIFICA
+  if (est == 1)
     decode(&temp_inst);
   char buf[64];
   disassembla(&temp_inst, buf);
 
-  printf("  [Ciclo %d] Estado %d (%s) \n  Instrucao: %s\n", cpu->ciclos_clock,
-         est, NOME_ESTADO[est], buf);
+  printf("\n-------------------------------\n");
+  if (est == 0)
+    printf("---------- PC = %d ----------\n", cpu->pc);
+  printf("[Ciclo %d] Estado %d (%s) \nInstrucao: %s\n", cpu->ciclos_clock, est,
+         NOME_ESTADO[est], buf);
 
+  printf("\nSinais de Controle:\n");
+  printf("PCFonte: %d | ControleULA: %d | ULAFonteB: %d | ULAFonteA: %d\n",
+         s.PCFonte, s.ControleULA, s.ULAFonteB, s.ULAFonteA);
+  printf("EscReg: %d  | RegDst: %d      | PCEsc: %d     | Branch: %d\n",
+         s.EscReg, s.RegDst, s.PCEsc, s.Branch);
+  printf("IouD: %d    | MemParaReg: %d  | EscMem: %d    | IREsc: %d\n", s.IouD,
+         s.MemParaReg, s.EscMem, s.IREsc);
+
+  // EXECUTA
   // MUX da Memoria
-  int mem_addr = s.IouD ? cpu->inter.ULASaida : cpu->pc;
+  int mem_addr = s.IouD ? (cpu->inter.ULASaida + INST_END) : cpu->pc;
   int mem_data = 0;
-  if (mem_addr >= 0 && mem_addr < MAX_MEM) {
-    mem_data = cpu->memoria[mem_addr].dado;
-  }
+  mem_data = cpu->memoria[mem_addr].dado;
 
   // MUX da ULA
   int ula_A = 0, ula_B = 0;
-  if (s.ULAFonteA == 0) {
+  switch (s.ULAFonteA) {
+  case 0:
     ula_A = cpu->pc;
-  } else if (s.ULAFonteA == 1) {
+    break;
+  case 1:
     ula_A = cpu->inter.A;
+    break;
   }
-
-  if (s.ULAFonteB == 0) {
+  switch (s.ULAFonteB) {
+  case 0:
     ula_B = cpu->inter.B;
-  } else if (s.ULAFonteB == 1) {
-    ula_B = 1; // PC + 1
-  } else if (s.ULAFonteB == 2) {
+    break;
+  case 1:
+    ula_B = 1;
+    break; // PC + 1
+  case 2:
     ula_B = ir->imm;
-  } else if (s.ULAFonteB == 3) {
-    ula_B = ir->imm;
+    break;
   }
-
   // Execução da ULA
   int ovf, zero;
   int ula_res = ula(ula_A, ula_B, s.ControleULA, &ovf, &zero);
 
-  // MUX PCFonte
-  int next_pc = cpu->pc;
-  if (s.PCEsc || (s.Branch && zero)) {
-    if (s.PCFonte == 0) {
-      next_pc = ula_res;
-    } else if (s.PCFonte == 1) {
-      next_pc = cpu->inter.ULASaida;
-    } else if (s.PCFonte == 2) {
-      next_pc = ir->addr;
-    }
-  }
-
-  // Prints de aviso
-  if (est == 0) {
-    printf("\n---------- PC = %d ----------\n", cpu->pc);
-  } else if (est == 1) {
-    printf(" | ULA(BranchAddr): PC(%d) + imm(%d) = %d\n", cpu->pc, ir->imm,
-           ula_res);
-  } else if (est == 2) {
-    printf(" | ULA(MemAddr): A(%d) + imm(%d) = %d\n", cpu->inter.A, ir->imm,
-           ula_res);
-  } else if (est == 4 || est == 5 || est == 6 || est == 8) {
-    atualiza_Estatisticas(cpu);
-    cpu->instrucoes_exec++;
-  } else if (est == 7) {
-    if (ovf)
-      printf(" | OVERFLOW! A=%d B=%d res=%d\n", cpu->inter.A, cpu->inter.B,
-             ula_res);
-    else
-      printf(" | ULA(Exec): A(%d) op(%d) B(%d) = %d\n", cpu->inter.A,
-             s.ControleULA, cpu->inter.B, ula_res);
-  } else if (est == 9) {
-    printf(" | ULA(BranchCond): A(%d) - B(%d) = %d\n", cpu->inter.A,
-           cpu->inter.B, ula_res);
-    if (zero)
-      printf(" | Branch TAKEN PC->%d\n", next_pc);
-    else
-      printf(" | Branch NOT taken\n");
-    atualiza_Estatisticas(cpu);
-    cpu->instrucoes_exec++;
-  } else if (est == 10) {
-    printf(" | PC->%d (jump)\n", next_pc);
-    atualiza_Estatisticas(cpu);
-    cpu->instrucoes_exec++;
-  }
-
   // Escrita na Memória
   if (s.EscMem) {
-    if (mem_addr >= 0 && mem_addr < MAX_MEM) {
+    if (mem_addr >= INST_END && mem_addr < MAX_MEM) {
       cpu->memoria[mem_addr].dado = cpu->inter.B;
     }
   }
@@ -450,10 +412,63 @@ void executa_ciclo(CPU *cpu) {
   }
 
   if (s.IREsc) {
-    if (mem_addr >= 0 && mem_addr < MAX_MEM) {
-      cpu->inter.IR = cpu->memoria[mem_addr];
-      decode(&cpu->inter.IR);
-      ir = &cpu->inter.IR;
+    cpu->inter.IR = cpu->memoria[mem_addr];
+    decode(&cpu->inter.IR);
+    ir = &cpu->inter.IR;
+  }
+
+  // Prints de execucao
+  switch (est) {
+  case 1:
+    printf("ULA(BranchAddr): PC(%d) + imm(%d) = %d\n", cpu->pc, ir->imm,
+           ula_res);
+    break;
+  case 2:
+    printf("ULA(Imm): A(%d) + imm(%d) = %d\n", cpu->inter.A, ir->imm, ula_res);
+    break;
+  case 7:
+    if (ovf)
+      printf("OVERFLOW! A=%d B=%d res=%d\n", cpu->inter.A, cpu->inter.B,
+             ula_res);
+    else
+      printf("ULA(Exec): A(%d) op(%d) B(%d) = %d\n", cpu->inter.A,
+             s.ControleULA, cpu->inter.B, ula_res);
+    break;
+  case 9:
+    printf("ULA(BranchCond): A(%d) - B(%d) = %d\n", cpu->inter.A, cpu->inter.B,
+           ula_res);
+    if (zero)
+      printf("Branch TAKEN PC->%d\n", cpu->pc);
+    else
+      printf("Branch NOT taken\n");
+    atualiza_Estatisticas(cpu);
+    cpu->instrucoes_exec++;
+    break;
+  case 10:
+    printf(" | PC->%d (jump)\n", cpu->pc);
+    atualiza_Estatisticas(cpu);
+    cpu->instrucoes_exec++;
+    break;
+  case 4:
+  case 5:
+  case 6:
+  case 8:
+    atualiza_Estatisticas(cpu);
+    cpu->instrucoes_exec++;
+    break;
+  }
+
+  // MUX PCFonte
+  if (s.PCEsc || (s.Branch && zero)) {
+    switch (s.PCFonte) {
+    case 0:
+      cpu->pc = ula_res;
+      break;
+    case 1:
+      cpu->pc = cpu->inter.ULASaida;
+      break;
+    case 2:
+      cpu->pc = ir->addr;
     }
   }
 
@@ -461,7 +476,6 @@ void executa_ciclo(CPU *cpu) {
   cpu->inter.B = (int)cpu->reg[ir->rt];
   cpu->inter.ULASaida = ula_res;
   cpu->inter.MDR = mem_data;
-  cpu->pc = next_pc;
 
   print_inter(cpu);
   // Atualizacoes
@@ -473,11 +487,6 @@ void executa_ciclo(CPU *cpu) {
 void executa_instrucao(CPU *cpu) {
   if (cpu->num_instrucoes == 0) {
     printf("Nenhuma instrucao carregada.\n");
-    return;
-  }
-  int pc_ini = cpu->pc;
-  if (cpu->memoria[pc_ini].opcode == 5) {
-    printf("Instrucao de parada no PC %d.\n", pc_ini);
     return;
   }
 
@@ -492,10 +501,6 @@ void executa_programa(CPU *cpu) {
     return;
   }
   while (cpu->pc < INST_END && cpu->instrucoes_exec < MAX_MEM) {
-    if (cpu->memoria[cpu->pc].opcode == 5) {
-      printf("\nInstrucao de parada no PC %d. Encerrando.\n", cpu->pc);
-      break;
-    }
     executa_instrucao(cpu);
   }
   printf("\nExecucao finalizada: %d instrucoes, %d ciclos de clock.\n",
@@ -521,26 +526,33 @@ void atualiza_Estatisticas(CPU *cpu) {
       cpu->est.or_op++;
       break;
     }
-  } else if (ir->opcode == 4) {
-    cpu->est.total_i++;
-    cpu->est.addi++;
-  } else if (ir->opcode == 8) {
-    cpu->est.total_i++;
-    cpu->est.beq++;
-  } else if (ir->opcode == 11) {
-    cpu->est.total_i++;
-    cpu->est.lw++;
-  } else if (ir->opcode == 15) {
-    cpu->est.total_i++;
-    cpu->est.sw++;
-  } else if (ir->opcode == 2) {
+  }
+  switch (ir->opcode) {
+  case 2:
     cpu->est.total_j++;
     cpu->est.jump++;
+    break;
+  case 4:
+    cpu->est.total_i++;
+    cpu->est.addi++;
+    break;
+  case 8:
+    cpu->est.total_i++;
+    cpu->est.beq++;
+    break;
+  case 11:
+    cpu->est.total_i++;
+    cpu->est.lw++;
+    break;
+  case 15:
+    cpu->est.total_i++;
+    cpu->est.sw++;
+    break;
   }
 }
 
 void volta_ciclo(CPU *cpu) {
-  if (cpu->ciclos_clock > 0 && cpu->i_hist > 0) {
+  if (cpu->ciclos_clock > 0) {
     cpu->ciclos_clock--;
     cpu->i_hist--;
     int idx = cpu->ciclos_clock % MAX_MEM;
@@ -626,9 +638,6 @@ void disassembla(Mem_in *e, char *buf) {
   case 4:
     sprintf(buf, "addi $r%d, $r%d, %d", e->rt, e->rs, e->imm);
     break;
-  case 5:
-    sprintf(buf, "HALT");
-    break;
   case 8:
     sprintf(buf, "beq $r%d, $r%d, %d", e->rs, e->rt, e->imm);
     break;
@@ -676,17 +685,30 @@ void print_regs(CPU *cpu) {
     printf("| %4s | %6d |\n", cpu->NOME_REG[i], cpu->reg[i]);
   printf("+------+--------+\n");
 }
+void int16_to_bin_str(int v, char *b) {
+  for (int i = 15; i >= 0; i--) {
+    b[15 - i] = (v & (1 << i)) ? '1' : '0';
+  }
+  b[16] = '\0';
+}
+
 void print_inter(CPU *cpu) {
+  char binA[17], binB[17], binULA[17], binMDR[17];
+  int16_to_bin_str(cpu->inter.A, binA);
+  int16_to_bin_str(cpu->inter.B, binB);
+  int16_to_bin_str(cpu->inter.ULASaida, binULA);
+  int16_to_bin_str(cpu->inter.MDR, binMDR);
+
   printf("\nRegistradores Intermediarios:\n");
-  printf("+----------+--------+\n");
-  printf("| Reg      |  Valor |\n");
-  printf("+----------+--------+\n");
-  printf("| IR       | %6d |\n", cpu->inter.IR.opcode);
-  printf("| A        | %6d |\n", cpu->inter.A);
-  printf("| B        | %6d |\n", cpu->inter.B);
-  printf("| ULASaida | %6d |\n", cpu->inter.ULASaida);
-  printf("| MDR      | %6d |\n", cpu->inter.MDR);
-  printf("+----------+--------+\n");
+  printf("+----------+--------+------------------+\n");
+  printf("| Reg      |  Valor | Binario          |\n");
+  printf("+----------+--------+------------------+\n");
+  printf("| IR       | %6d | %16s |\n", cpu->inter.IR.dado, cpu->inter.IR.bin);
+  printf("| A        | %6d | %16s |\n", cpu->inter.A, binA);
+  printf("| B        | %6d | %16s |\n", cpu->inter.B, binB);
+  printf("| ULASaida | %6d | %16s |\n", cpu->inter.ULASaida, binULA);
+  printf("| MDR      | %6d | %16s |\n", cpu->inter.MDR, binMDR);
+  printf("+----------+--------+------------------+\n");
 }
 void print_est(CPU *cpu) {
   printf("\n===== Estatisticas =====\n");
@@ -737,19 +759,19 @@ void salva_asm(CPU *cpu) {
   printf("Arquivo '%s' salvo!\n", arq);
 }
 
-void salva_dat(CPU *cpu) {
+void salva_mem(CPU *cpu) {
   char arq[100];
-  printf("Nome do arquivo .dat: ");
+  printf("Nome do arquivo .mem: ");
   limpa_buffer();
   scanf("%s", arq);
-  strcat(arq, ".dat");
+  strcat(arq, ".mem");
   FILE *f = fopen(arq, "w");
   if (!f) {
     printf("Erro ao criar arquivo.\n");
     return;
   }
-  for (int i = INST_END; i < MAX_MEM; i++)
-    fprintf(f, "%d\n", cpu->memoria[i].dado);
+  for (int i = 0; i < MAX_MEM; i++)
+    fprintf(f, "%s\n", cpu->memoria[i].bin);
   fclose(f);
   printf("Arquivo '%s' salvo!\n", arq);
 }

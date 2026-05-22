@@ -1,7 +1,7 @@
+#include "bib.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "bib.h"
 
 int main() {
   CPU cpu;
@@ -23,7 +23,7 @@ int main() {
            "11. Imprimir todo o simulador\n"
            "12. Imprimir Estatisticas\n"
            "13. Salvar .asm\n"
-           //"14. Salvar .dat\n"
+           "14. Salvar .mem\n"
            " 0. Sair\n"
            "Opcao: ");
     if (scanf("%d", &menu) != 1) {
@@ -46,10 +46,6 @@ int main() {
     case 4:
       if (cpu.num_instrucoes == 0) {
         printf("Nenhuma instrucao carregada.\n");
-        break;
-      }
-      if (cpu.estado_atual == 0 && cpu.memoria[cpu.pc].opcode == 5) {
-        printf("Instrucao de parada no PC %d.\n", cpu.pc);
         break;
       }
       executa_ciclo(&cpu);
@@ -82,7 +78,7 @@ int main() {
       salva_asm(&cpu);
       break;
     case 14:
-      salva_dat(&cpu);
+      salva_mem(&cpu);
       break;
     case 0:
       printf("Encerrando.\n");
